@@ -1,141 +1,155 @@
-Email Categorization and Processing System
-This project is a Node.js-based application that processes email addresses and categorizes them as either "Personal" or "Work" using a job queue system with Bull and MongoDB. The system listens for email processing jobs, retrieves the email records from a database, processes them, and updates their status and category.
+ 
+---
 
-Features
-Email Processing: Processes email records and categorizes them based on their domain (e.g., Gmail, Yahoo, etc. are considered "Personal").
-Job Queue: Uses Bull for background job processing to handle large batches of emails.
-MongoDB Integration: Stores email records in MongoDB and updates them after processing.
-Error Handling: Includes error handling for failed email processing jobs.
-Redis Integration: Uses Redis for Bull job queue management.
-Prerequisites
-Node.js (v16.x or above)
-MongoDB (local or remote)
-Redis (for Bull job queue)
-Setup Instructions
-1. Clone the Repository
-bash
-Copy
-Edit
-git clone https://github.com/AnjuPrajapati/Email-Categorization.git
-cd email-mern
-2. Install Dependencies
-Install the required dependencies for the project:
+# **Email Processing Web Application**  
 
-bash
-Copy
-Edit
-npm install
-3. Configure Environment Variables
-Create a .env file in the root directory and add the following environment variables:
+This is a web application for processing email data from uploaded CSV files. The application categorizes emails into "personal" or "work" and provides real-time status updates. It leverages **Redis Pub/Sub** for asynchronous background processing and **MongoDB** for data storage.  
 
-env
-Copy
-Edit
-MONGO_URI=mongodb://localhost:27017/emaildb  # MongoDB connection URI
-REDIS_URL=redis://localhost:6379  # Redis server URL
-PORT=5000  # Port for the application
-4. Start MongoDB and Redis
-Make sure that both MongoDB and Redis servers are running on your machine.
+---
 
-Start MongoDB:
+## **Features**  
 
-bash
-Copy
-Edit
-mongod
-Start Redis:
+- Upload CSV files containing email data  
+- Background job processing using Redis Pub/Sub  
+- Batch processing of email records for efficient database insertion  
+- Real-time status updates for each upload request  
+- Email categorization into "personal" and "work"  
 
-bash
-Copy
-Edit
-redis-server
-5. Start the Application
-Start the server by running:
+---
 
-bash
-Copy
-Edit
-npm start
-This will start the Express server on the specified port (default: 5000).
+## **Tech Stack**  
 
-6. Start the Email Worker
-Start the background job worker that processes the email queue:
+- **Node.js** (Backend)  
+- **Express.js** (Web framework)  
+- **MongoDB** (Database)  
+- **Redis** (Job queue and Pub/Sub)  
+- **Mongoose** (MongoDB ODM)  
+- **uuid** (Unique request identifiers)  
+- **multer** (File uploads)  
+- **fs** (File system handling)  
 
-bash
-Copy
-Edit
-node src/workers/emailWorker.js
-7. Usage
-The email processing worker will listen for jobs and process pending emails.
-The worker checks for emails in the "Pending" status and updates them with either a "Personal" or "Work" category based on the email domain.
-8. Accessing the API
-The following endpoints are available:
+---
 
-POST /api/emails
-Add a new email to the processing queue:
+## **Installation**  
 
-Request Body:
+1. Clone the repository:  
+   ```bash
+   git clone https://github.com/AnjuPrajapati14/Email_Check.git
+   cd Email_Check
+   ```
 
-json
-Copy
-Edit
-{
-  "email": "example@gmail.com",
-  "requestId": "some-unique-request-id"
-}
-Response:
+2. Install dependencies:  
+   ```bash
+   npm install
+   ```
 
-json
-Copy
-Edit
-{
-  "message": "Email added to queue for processing"
-}
-GET /api/emails
-Fetch all emails:
+3. Set up MongoDB and Redis on your local machine. Ensure that Redis is running on `127.0.0.1:6379`.  
 
-Response:
-json
-Copy
-Edit
-[
+4. Create a `.env` file with the following configuration:  
+   ```env
+   PORT=3000
+   MONGODB_URI=mongodb://localhost:27017/your-database-name
+   REDIS_URL=redis://127.0.0.1:6379
+   ```
+
+5. Start the application:  
+   ```bash
+   npm start
+   ```
+
+---
+
+## **API Endpoints**  
+
+### **Upload Emails**  
+**POST** `/api/upload`  
+
+- **Description**: Upload a CSV file with email data.  
+- **Request Body**: Multipart form-data with a CSV file (`file` key).  
+- **Response**:  
+  ```json
   {
-    "email": "example@gmail.com",
-    "status": "Processed",
-    "category": "Personal",
-    "requestId": "some-unique-request-id"
-  },
-  {
-    "email": "work@example.com",
-    "status": "Processed",
-    "category": "Work",
-    "requestId": "some-unique-request-id"
+    "message": "Emails uploaded successfully.",
+    "requestId": "c1a5090f-301e-4d20-9796-29e597d73b42"
   }
-]
-GET /api/redis
-Fetch Redis job status:
+  ```
 
-Response:
-json
-Copy
-Edit
-{
-  "jobCount": 10,
-  "failedJobCount": 3,
-  "stalledJobCount": 2
-}
-Project Structure
-src/: Source code directory
+---
 
-config/: Configuration files (e.g., database, Redis, Bull setup)
-models/: Mongoose schemas and models
-routes/: Express route handlers
-workers/: Bull job workers for processing email records
-middlewares/: Custom middlewares, such as error handling
-utils/: Helper utilities
-package.json: Project dependencies and scripts
+## **How It Works**  
 
-.env: Environment configuration for the app
+1. **CSV Upload**: The user uploads a CSV file containing email addresses.  
+2. **Batch Processing**: Emails are inserted into MongoDB in batches of 1000 records.  
+3. **Redis Pub/Sub**: After inserting the emails, a `requestId` is published to the `emailQueue` channel.  
+4. **Background Worker**: A separate worker subscribes to the `emailQueue` and processes each request in the background.  
+5. **Email Categorization**: The worker categorizes emails into "personal" or "work" and updates the status in the database.  
 
+---
+
+## **Redis Monitoring**  
+
+To verify Redis activity, you can use the `redis-cli`:  
+
+```bash
+127.0.0.1:6379> SUBSCRIBE emailQueue
+Reading messages... (press Ctrl-C to quit)
+```
+
+You will see messages containing the `requestId` for each batch of emails processed.  
+
+---
+
+## **File Structure**  
+
+```
+project-root
+│
+email-backend
+- src
+├── config/
+│   └── cachingConfig.js            
+│   └── config.js
+│   └── db.js
+│   └── jobProcessing.js               
+│   └── redis.js            # Redis client setup
+├── controllers/
+│   └── emailController.js  # Upload and batch processing logic
+│   └── statusController.js  # status updation logic
+│   └── uploadController.js  # Upload
+├── middlewares/
+│   └── errorHandler.js       # error handling
+├── models/
+│   └── emailModel.js       # Mongoose schema for emails
+├── utils/
+│   └── csvParser.js        # CSV parsing utility
+│   └── redisUtils.js         
+├── routes/
+│   └── emailRoutes.js      # API routes for email processing
+|   └── redisRoutes.js   
+├── worker/
+│   └── emailWorker.js      # Redis subscriber for background processing
+├── .env                    # Environment variables
+├── app.js                  # Main application entry point
+-uploads / folder for uploaded files
+└── README.md               # Project documentation
+```
+
+---
+
+## **Future Enhancements**  
+
+- Add **progress tracking** for each batch.  
+- Implement a **retry mechanism** for failed jobs.  
+- Add a **notification system** for job completion.  
+- Support **large-scale CSV uploads** with cloud storage integration.  
+
+---
+
+## **License**  
+This project is licensed under the MIT License.  
+
+---
+
+ 
 README.md: Documentation for the project
 
