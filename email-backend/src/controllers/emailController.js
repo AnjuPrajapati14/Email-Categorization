@@ -1,14 +1,23 @@
 const Email = require("../models/emailModel");
 
-// Fetch email processing statistics
+/**
+ * Fetches email processing statistics.
+ */
 const getEmailStats = async (req, res) => {
   try {
-    const totalEntries = await Email.countDocuments();
-    const totalProcessed = await Email.countDocuments({ status: "Processed" });
-    const totalPending = await Email.countDocuments({ status: "Pending" });
-
-    const personalEmails = await Email.countDocuments({ category: "Personal" });
-    const workEmails = await Email.countDocuments({ category: "Work" });
+    const [
+      totalEntries,
+      totalProcessed,
+      totalPending,
+      personalEmails,
+      workEmails,
+    ] = await Promise.all([
+      Email.countDocuments(),
+      Email.countDocuments({ status: "Processed" }),
+      Email.countDocuments({ status: "Pending" }),
+      Email.countDocuments({ category: "Personal" }),
+      Email.countDocuments({ category: "Work" }),
+    ]);
 
     res.json({
       totalEntries,
@@ -19,10 +28,9 @@ const getEmailStats = async (req, res) => {
       workEmails,
     });
   } catch (error) {
+    console.error("Error fetching email stats:", error);
     res.status(500).json({ error: "Failed to fetch email stats" });
   }
 };
 
 module.exports = { getEmailStats };
-
-//Handles email processing & stats

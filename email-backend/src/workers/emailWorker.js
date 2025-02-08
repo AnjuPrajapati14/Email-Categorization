@@ -1,277 +1,121 @@
+const Redis = require("ioredis");
 const Email = require("../models/emailModel");
-const emailQueue = require("../config/bullConfig");
+ 
+const redis = new Redis({
+  host: process.env.REDIS_HOST,
+  port: process.env.REDIS_PORT,
+});
+  
+const emailChannel = "emailQueue";
+const BATCH_SIZE = 100; // Process 100 emails at a time
 
-console.log("Email worker is running and listening for jobs...");
-
-// Process emails from the queue
-emailQueue.process(async (job, done) => {
-  console.log("Processing job:", job.id);
-  const { requestId } = job.data;
-  console.log(`Processing job for requestId: ${requestId}`);
-  if (!requestId) {
-    console.error("Missing requestId in job data");
-    return done(new Error("Invalid job data"));
-  }
-
-  console.log("Pending emails are left...");
-  try {
-    console.log("fetching the pending emails");
-
-    // Fetch a batch of pending emails with a higher timeout
-    const pendingEmails = await Email.find({ requestId, status: "Pending" })
-      .maxTimeMS(30000) // Increase max time for query (e.g., 30 seconds)
-      .exec(); // Ensure to execute the query
-
-    if (pendingEmails.length === 0) {
-      console.log("No pending emails to process.");
-      return done();
+// Subscribe to the Redis job queue
+const subscribeToJobQueue = () => {
+  redis.subscribe(emailChannel, (err) => {
+    if (err) {
+      console.error("Failed to subscribe to channel:", err);
+    } else {
+      console.log(`Subscribed to ${emailChannel}. Listening for jobs...`);
     }
+  });
 
-    // Process the fetched batch of emails
-    for (const email of pendingEmails) {
+  redis.on("message", async (channel, message) => {
+    if (channel === emailChannel) {
+      const { requestId } = JSON.parse(message);
+      console.log(`Processing emails for requestId: ${requestId}`);
+
       try {
-        // Define known personal email providers
-        const personalDomains = [
-          "gmail.com",
-          "yahoo.com",
-          "outlook.com",
-          "aol.com",
-          "icloud.com",
-          "hotmail.com",
-          "protonmail.com",
-          "zoho.com",
-          "gmx.com",
-          "mail.com",
-          "yandex.com",
-          "live.com",
-          "me.com",
-          "fastmail.com",
-        ];
-
-        // Extract domain
-        const emailDomain = email.email.split("@")[1];
-
-        // Determine category
-        const category = personalDomains.includes(emailDomain)
-          ? "Personal"
-          : "Work";
-
-        // Update the email record
-        email.status = "Processed";
-        email.category = category;
-        await email.save();
-
-        console.log(`Processed email: ${email.email} | Category: ${category}`);
-
-        // Simulate processing delay
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      } catch (err) {
-        console.error(`Error processing email: ${email.email}`, err);
+        // Fetch unprocessed emails in batches and process them
+        await processEmails(requestId);
+        console.log(`Job completed successfully for requestId: ${requestId}`);
+      } catch (error) {
+        console.error(
+          `Error processing emails for requestId ${requestId}:`,
+          error
+        );
       }
     }
+  });
+};
 
-    // Check if there are more emails to process and add a new job for the next batch
-    const remainingEmails = await Email.find({
-      status: "Pending",
-    }).countDocuments();
-    if (remainingEmails > 0) {
-      console.log(
-        `Remaining emails: ${remainingEmails}. Adding next batch job.`
-      );
-      emailQueue.add({ requestId }); // Add the next job to process the next batch
+// Function to process emails in batches
+const processEmails = async (requestId) => {
+  let pendingEmails = await Email.find({ requestId, status: "Pending" });
+
+  if (!pendingEmails.length) {
+    console.log("No pending emails to process.");
+    return;
+  }
+
+  // Process in batches
+  let batch = [];
+  for (const email of pendingEmails) {
+    batch.push(email);
+    if (batch.length >= BATCH_SIZE) {
+      await processEmailsBatch(batch);
+      batch = []; // Reset batch after processing
     }
-
-    console.log("Job completed successfully.");
-    done(); // Mark job as complete
-  } catch (err) {
-    console.error("Error fetching or processing emails:", err);
-    done(err); // Mark job as failed
-  }
-});
-
-module.exports = emailQueue;
-
-/*
-const Email = require("../models/emailModel");
-const emailQueue = require("../config/bullConfig");
-
-const personalDomains = [
-  "gmail.com",
-  "yahoo.com",
-  "outlook.com",
-  "aol.com",
-  "icloud.com",
-  "hotmail.com",
-  "protonmail.com",
-  "zoho.com",
-  "gmx.com",
-  "mail.com",
-  "yandex.com",
-  "live.com",
-  "me.com",
-  "fastmail.com",
-];
-
-console.log("Email worker is running and listening for jobs...");
-
-emailQueue.process(async (job, done) => {
-  const { requestId } = job.data;
-
-  if (!requestId) {
-    console.error("Missing requestId in job data");
-    return done(new Error("Invalid job data"));
   }
 
-  try {
-    console.log(`Processing job for requestId: ${requestId}`);
-
-    // Fetch a batch of pending emails for the given requestId
-    const pendingEmails = await Email.find({ requestId, status: "Pending" });
-
-    if (pendingEmails.length === 0) {
-      console.log("No pending emails to process.");
-      return done();
-    }
-
-    console.log(`Found ${pendingEmails.length} pending emails. Processing...`);
-
-    // Process emails in parallel with Promise.all for better performance
-    await Promise.all(pendingEmails.map(processEmail));
-
-    // Check if there are more pending emails and schedule another job
-    const remainingEmailsCount = await Email.countDocuments({
-      requestId,
-      status: "Pending",
-    });
-
-    if (remainingEmailsCount > 0) {
-      console.log(
-        `Remaining emails: ${remainingEmailsCount}. Adding next batch job.`
-      );
-      await emailQueue.add({ requestId });
-    }
-
-    console.log("Job completed successfully.");
-    done();
-  } catch (err) {
-    console.error("Error processing job:", err);
-    done(err); // Mark job as failed
+  // Process any remaining emails
+  if (batch.length > 0) {
+    await processEmailsBatch(batch);
   }
-});
+};
 
-/**
- * Process a single email
- * @param {Object} email - Email document from MongoDB
- */
-/*
-async function processEmail(email) {
-  try {
-    const emailDomain = email.email.split("@")[1];
-    const category = personalDomains.includes(emailDomain)
-      ? "Personal"
-      : "Work";
+// Function to process a batch of emails
+const processEmailsBatch = async (emailBatch) => {
+  const personalDomains = [
+    "gmail.com",
+    "yahoo.com",
+    "outlook.com",
+    "hotmail.com",
+    "icloud.com",
+    "aol.com",
+    "protonmail.com",
+    "zoho.com",
+    "mail.com",
+    "gmx.com",
+  ];
+  const bulkOps = emailBatch
+    .map((email) => {
+      const emailDomain = email.email.split("@")[1]?.toLowerCase();
 
-    email.status = "Processed";
-    email.category = category;
-    await email.save();
-
-    console.log(`Processed email: ${email.email} | Category: ${category}`);
-
-    // Simulate a delay for each email processing (optional)
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  } catch (err) {
-    console.error(`Error processing email: ${email.email}`, err);
-  }
-}
-
-module.exports = emailQueue;
-
-
-const Email = require("../models/emailModel");
-const emailQueue = require("../config/bullConfig");
-
-console.log("Email worker is running and listening for jobs...");
-// Process emails from the queue
-emailQueue.process(async (job, done) => {
-  console.log(" Processing job:", job.id);
-  const { requestId } = job.data;
-  console.log(`Processing job for requestId: ${requestId}`);
-  if (!requestId) {
-    console.error("Missing requestId in job data");
-    return done(new Error("Invalid job data"));
-  }
-
-  console.log("Pending emails are left...");
-  try {
-    console.log("fetching the pending emails");
-    // Fetch a batch of pending emails
-    const pendingEmails = await Email.find({ requestId, status: "Pending" });
-
-    if (pendingEmails.length === 0) {
-      console.log("No pending emails to process.");
-      return done();
-    }
-    // Process the fetched batch of emails
-    for (const email of pendingEmails) {
-      try {
-        // Define known personal email providers
-        const personalDomains = [
-          "gmail.com",
-          "yahoo.com",
-          "outlook.com",
-          "aol.com",
-          "icloud.com",
-          "hotmail.com",
-          "protonmail.com",
-          "zoho.com",
-          "gmx.com",
-          "mail.com",
-          "yandex.com",
-          "live.com",
-          "me.com",
-          "fastmail.com",
-        ];
-
-        // Extract domain
-        const emailDomain = email.email.split("@")[1];
-
-        // Determine category
-        const category = personalDomains.includes(emailDomain)
-          ? "Personal"
-          : "Work";
-
-        // Update the email record
-        email.status = "Processed";
-        email.category = category;
-        await email.save();
-
-        console.log(`Processed email: ${email.email} | Category: ${category}`);
-
-        // Simulate processing delay
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      } catch (err) {
-        console.error(`Error processing email: ${email.email}`, err);
+      // Skip invalid emails
+      if (!emailDomain) {
+        console.log(`Invalid email format for: ${email.email}`);
+        return null;
       }
-    }
 
-    // Check if there are more emails to process and add a new job for the next batch
-    const remainingEmails = await Email.find({
-      status: "Pending",
-    }).countDocuments();
-    if (remainingEmails > 0) {
-      console.log(
-        `Remaining emails: ${remainingEmails}. Adding next batch job.`
-      );
-      emailQueue.add({ requestId }); // Add the next job to process the next batch
-    }
+      // Categorize based on domain
+      const category = personalDomains.includes(emailDomain)
+        ? "Personal"
+        : "Work";
+      console.log(`Categorizing email: ${email.email} as ${category}`); // Added log
 
-    console.log("Job completed successfully.");
-    done(); // Mark job as complete
-  } catch (err) {
-    console.error("Error fetching or processing emails:", err);
-    done(err); // Mark job as failed
+      return {
+        updateOne: {
+          filter: { email: email.email },
+          update: { $set: { status: "Processed", category } },
+        },
+      };
+    })
+    .filter(Boolean); // Filter out any null entries (invalid emails)
+
+  // Perform bulk update on the database
+  try {
+    if (bulkOps.length) {
+      await Email.bulkWrite(bulkOps);
+      console.log(`Processed ${emailBatch.length} emails.`);
+      // Simulated delay of 2 seconds to mimic real-world processing
+      await delay(2000);
+    }
+  } catch (error) {
+    console.error("Error processing email batch:", error);
   }
-});
+};
 
-module.exports = emailQueue;
-*/
+// Utility function for delay
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+module.exports = subscribeToJobQueue;

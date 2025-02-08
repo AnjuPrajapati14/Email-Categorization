@@ -1,7 +1,7 @@
 const Email = require("../models/emailModel");
 
 const getStatus = async (req, res) => {
-  const { requestId } = req.params;
+  const { requestId } = req.params; // Extract the requestId from the URL
 
   if (!requestId) {
     return res.status(400).json({ error: "Request ID is required." });
@@ -65,5 +65,4 @@ const getStatus = async (req, res) => {
   }
 };
 
-module.exports = getStatus;
- 
+module.exports = { getStatus };

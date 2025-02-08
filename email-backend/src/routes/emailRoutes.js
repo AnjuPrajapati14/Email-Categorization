@@ -1,8 +1,11 @@
 const express = require("express");
 const multer = require("multer");
-const uploadEmails = require("../controllers/uploadController");
-const getStatus = require("../controllers/statusController");
+const { uploadEmails } = require("../controllers/uploadController");
+const { getStatus } = require("../controllers/statusController");
 const { getEmailStats } = require("../controllers/emailController");
+
+const router = express.Router();
+
 // Configure multer for file uploads
 const upload = multer({
   dest: "uploads/", // Directory to store the uploaded files temporarily
@@ -16,18 +19,11 @@ const upload = multer({
   },
 });
 
-const router = express.Router();
-
 // Routes
-
-// POST route for file upload
-router.post("/upload", upload.single("file"), uploadEmails);
-
-// GET route for checking the status of email processing
-router.get("/status/:requestId", getStatus);
-
-// Fetch email processing statistics
-router.get("/email-stats", getEmailStats);
+ 
+router.post("/upload", upload.single("file"), uploadEmails); // Upload CSV file
+router.get("/status/:requestId", getStatus); // GET route for checking the status of email processing
+router.get("/email-stats", getEmailStats); // Fetch email processing statistics
 
 // Error handling middleware for multer-related issues (e.g., file type or size)
 router.use((err, req, res, next) => {

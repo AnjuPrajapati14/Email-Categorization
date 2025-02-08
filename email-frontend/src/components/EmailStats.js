@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 
+// Fetch stats periodically (every 5 seconds in this case)
 const EmailStats = () => {
   const [emailStats, setEmailStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -9,7 +10,7 @@ const EmailStats = () => {
     const fetchStats = async () => {
       try {
         const response = await axios.get(
-          "http://localhost:5000/api/email-stats"
+          "http://localhost:5000/api/emails/email-stats"
         );
         console.log("API Response:", response.data); // Debugging
         setEmailStats(response.data);
@@ -20,7 +21,11 @@ const EmailStats = () => {
       }
     };
 
-    fetchStats();
+    fetchStats(); // Initial fetch
+    const intervalId = setInterval(fetchStats, 1000); // Poll every 5 seconds
+
+    // Cleanup on component unmount
+    return () => clearInterval(intervalId);
   }, []);
 
   if (loading) {
@@ -74,7 +79,3 @@ const EmailStats = () => {
 };
 
 export default EmailStats;
-
-/*
-
-*/

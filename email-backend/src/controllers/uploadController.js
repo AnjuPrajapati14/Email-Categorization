@@ -1,88 +1,75 @@
 const fs = require("fs");
-const csvParser = require("csv-parser");
-const Email = require("../models/emailModel");
 const { v4: uuidv4 } = require("uuid");
-const emailQueue = require("../config/bullConfig");
+const Email = require("../models/emailModel");
+const parseCsv = require("../utils/csvParser");
+const redisClient = require("../config/redis");
 
-const BATCH_SIZE = 1000; // Process 1000 emails at a time
+const BATCH_SIZE = 1000;
 
+/**
+ * Uploads emails from a CSV file and initiates processing.
+ */
 const uploadEmails = async (req, res) => {
   const { file } = req;
-  if (!file) return res.status(400).json({ error: "No file uploaded." });
-  if (!file || !file.path) {
-    return res
-      .status(400)
-      .json({ error: "No file uploaded or invalid file path." });
+
+  if (!file) {
+    return res.status(400).json({
+      error:
+        "No file uploaded. Please ensure the file is a CSV and less than 30MB.",
+    });
+  }
+  if (!file.path) {
+    return res.status(400).json({ error: "Invalid file path." });
   }
 
   const requestId = uuidv4();
-  let emailBatch = [];
 
   try {
-    const stream = fs
-      .createReadStream(file.path)
-      .pipe(csvParser())
-      .on("data", async (row) => {
-        if (row.email && row.email.trim() !== "") {
-          emailBatch.push(row.email.trim());
-        }
+    const emails = await parseCsv(file.path);
+    if (!emails.length) {
+      return res
+        .status(400)
+        .json({ error: "The uploaded CSV is empty or has an invalid format." });
+    }
+    await insertEmailsInBatches(emails, requestId);
 
-        if (emailBatch.length >= BATCH_SIZE) {
-          stream.pause(); // Pause to process the batch
-          await insertEmailsBatch(emailBatch, requestId);
-          emailBatch = [];
-          stream.resume(); // Resume after processing
-        }
-      })
+    // Publish the requestId to the emailQueue channel
+    await redisClient.publish("emailQueue", JSON.stringify({ requestId }));
 
-      .on("end", async () => {
-        try {
-          if (emailBatch.length > 0) {
-            await insertEmailsBatch(emailBatch, requestId);
-          }
-          const job = await emailQueue.add({ requestId });
-          console.log(
-            `Added job to queue: ${job.id} for requestId: ${requestId}`
-          );
-
-          // emailQueue.add({ requestId });
-          console.log(`Added job to queue for requestId: ${requestId}`);
-          res
-            .status(201)
-            .json({ message: "Emails uploaded successfully.", requestId });
-        } catch (error) {
-          console.error("Final batch processing error:", error);
-          res.status(500).json({ error: "Error finalizing email upload." });
-        }
-      })
-
-      .on("error", (error) => {
-        console.error("CSV parsing error:", error);
-        res.status(500).json({ error: "Error processing the CSV file." });
-      });
+    res
+      .status(201)
+      .json({ message: "Emails uploaded successfully.", requestId });
   } catch (error) {
-    console.error("File processing error:", error);
+    console.error("Error during email upload:", error);
     res.status(500).json({ error: "Error processing the uploaded file." });
+  } finally {
+    fs.unlink(file.path, (err) => {
+      if (err) console.error("Error deleting file:", err);
+    });
   }
 };
 
-const insertEmailsBatch = async (emails, requestId) => {
+/**
+ * Inserts emails into the database in batches.
+ */
+const insertEmailsInBatches = async (emails, requestId) => {
   try {
-    const uniqueEmails = Array.from(new Set(emails));
-    const bulkOps = uniqueEmails.map((email) => ({
-      updateOne: {
-        filter: { email },
-        update: { $setOnInsert: { email, requestId, status: "Pending" } },
-        upsert: true,
-      },
-    }));
-
-    if (bulkOps.length > 0) {
-      await Email.bulkWrite(bulkOps);
+    for (let i = 0; i < emails.length; i += BATCH_SIZE) {
+      const batch = emails.slice(i, i + BATCH_SIZE);
+      const bulkOps = batch.map((email) => ({
+        updateOne: {
+          filter: { email },
+          update: { $setOnInsert: { email, requestId, status: "Pending" } },
+          upsert: true,
+        },
+      }));
+      if (bulkOps.length) await Email.bulkWrite(bulkOps);
+      // After every batch, immediately publish the requestId for background processing
+      await redisClient.publish("emailQueue", JSON.stringify({ requestId }));
     }
   } catch (error) {
-    console.error("Database batch insertion error:", error);
+    console.error("Error inserting emails:", error);
   }
 };
 
-module.exports = uploadEmails;
+module.exports = { uploadEmails };

@@ -1,17 +1,20 @@
-// middlewares/errorHandler.js
-
 const errorHandler = (err, req, res, next) => {
-  // Log the error for debugging
-  console.error(err.stack);
+  console.error(`[Error] ${err.name}: ${err.message}`);
 
-  // Handle specific error codes
   if (err.name === "ValidationError") {
-    return res.status(400).json({ error: err.message });
+    return res
+      .status(400)
+      .json({ error: "Validation Error", details: err.message });
   }
 
-  // Return generic server error if no specific handler found
-  res.status(500).json({
+  if (err.name === "CastError") {
+    return res.status(400).json({ error: "Invalid ID format." });
+  }
+
+  // Handle other errors (optional: check for specific HTTP errors)
+  res.status(err.status || 500).json({
     error: "Something went wrong. Please try again later.",
+    message: err.message || "Internal Server Error",
   });
 };
 

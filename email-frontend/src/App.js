@@ -2,6 +2,7 @@ import React from "react";
 import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
 import Home from "./pages/Home";
 import Status from "./pages/Status";
+import EmailActions from "./components/EmailActions";
 
 function App() {
   return (

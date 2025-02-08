@@ -1,26 +1,45 @@
-// src/utils/redisUtils.js
+const redis = require("../config/redis");
 
-const redis = require("../config/redisConfig");
-
-// Set a key in Redis
-async function setKey(key, value) {
+/**
+ * Sets a key-value pair in Redis.
+ * @param {string} key - The key to set.
+ * @param {string} value - The value to set.
+ */
+const setKey = async (key, value) => {
   try {
     await redis.set(key, value);
-    console.log(`Key set: ${key} => ${value}`);
+    console.log(`Redis set: ${key} => ${value}`);
   } catch (error) {
-    console.error("Error setting key:", error);
+    console.error(`Error setting key (${key}):`, error);
   }
-}
+};
 
-// Get a key from Redis
-async function getKey(key) {
+/**
+ * Gets a value by key from Redis.
+ * @param {string} key - The key to fetch.
+ * @returns {Promise<string>} - The value associated with the key.
+ */
+const getKey = async (key) => {
   try {
     const value = await redis.get(key);
-    console.log(`Key fetched: ${key} => ${value}`);
+    console.log(`Redis get: ${key} => ${value}`);
     return value;
   } catch (error) {
-    console.error("Error fetching key:", error);
+    console.error(`Error fetching key (${key}):`, error);
   }
-}
+};
 
-module.exports = { setKey, getKey };
+/**
+ * Deletes a key from Redis.
+ * @param {string} key - The key to delete.
+ */
+const delKey = async (key) => {
+  try {
+    await redis.del(key);
+    console.log(`Redis delete: ${key}`);
+  } catch (error) {
+    console.error(`Error deleting key (${key}):`, error);
+  }
+};
+
+module.exports = { setKey, getKey, delKey };

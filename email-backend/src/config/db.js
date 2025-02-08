@@ -1,22 +1,26 @@
 const mongoose = require("mongoose");
-const dotenv = require("dotenv");
-
-dotenv.config();
+const { mongoUri } = require("./config");
 
 const connectDB = async () => {
   try {
-    await mongoose.connect(process.env.MONGO_URI, {
+    await mongoose.connect(mongoUri, {
       useNewUrlParser: true,
-      useUnifiedTopology: true, // Ensures new connection management
-      serverSelectionTimeoutMS: 30000, // 5 seconds timeout for server selection
-      socketTimeoutMS: 30000,
-      connectTimeoutMS: 30000, // 10 seconds timeout for initial connection
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 50000,
+      socketTimeoutMS: 50000,
+      connectTimeoutMS: 50000,
     });
     console.log("MongoDB Connected");
   } catch (error) {
     console.error("MongoDB Connection Failed", error);
-    process.exit(1); // Exit process with failure code
+    process.exit(1);
   }
+
+  process.on("SIGINT", async () => {
+    await mongoose.connection.close();
+    console.log("MongoDB connection closed due to app termination");
+    process.exit(0);
+  });
 };
 
 module.exports = connectDB;
